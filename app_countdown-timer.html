@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Countdown Timer</title>
+<!--
+  _     _         _   _                 _           
+ | |__ (_) __ _  | |_| |__   __ _ _ __ | | _____    
+ | '_ \| |/ _` | | __| '_ \ / _` | '_ \| |/ / __|   
+ | |_) | | (_| | | |_| | | | (_| | | | |   <\__ \   
+ |_.__/|_|\__, |  \__|_| |_|\__,_|_| |_|_|\_\___/   
+          |___/                                     
+ _               _                 _             _ 
+| |_ ___     ___| | __ _ _   _  __| | ___   __ _(_)
+| __/ _ \   / __| |/ _` | | | |/ _` |/ _ \ / _` | |
+| || (_) | | (__| | (_| | |_| | (_| |  __/| (_| | |
+ \__\___/   \___|_|\__,_|\__,_|\__,_|\___(_)__,_|_|
+
+-->
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Bebas+Neue&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0d0d0f;
+    --panel: #141418;
+    --border: #2a2a35;
+    --amber: #e8a020;
+    --amber-dim: #7a5010;
+    --amber-glow: rgba(232, 160, 32, 0.18);
+    --amber-glow-soft: rgba(232, 160, 32, 0.06);
+    --red: #d63030;
+    --red-glow: rgba(214, 48, 48, 0.25);
+    --green: #3aad6e;
+    --text-dim: #555568;
+    --text-mid: #8888a0;
+    --radius: 4px;
+  }
+
+  body {
+    background: var(--bg);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Share Tech Mono', monospace;
+    color: var(--amber);
+    padding: 24px;
+  }
+
+  /* Scanline overlay ? intensifies on alarm */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.08) 2px,
+      rgba(0,0,0,0.08) 4px
+    );
+    pointer-events: none;
+    z-index: 999;
+  }
+  body.alarm::before {
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.22) 2px,
+      rgba(0,0,0,0.22) 4px
+    );
+  }
+
+  /* Alarm vignette ? red bleed from edges */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 998;
+  }
+  body.alarm::after {
+    animation: vignette-pulse 2.4s ease-in-out infinite;
+  }
+  @keyframes vignette-pulse {
+    0%, 100% { background: radial-gradient(ellipse at center, transparent 38%, rgba(160,10,10,0.42) 100%); }
+    50%       { background: radial-gradient(ellipse at center, transparent 48%, rgba(160,10,10,0.16) 100%); }
+  }
+
+  .container {
+    width: 100%;
+    max-width: 560px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  /* Header */
+  .header {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 12px;
+  }
+  .header h1 {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 28px;
+    letter-spacing: 4px;
+    color: var(--amber);
+    text-shadow: 0 0 18px var(--amber-glow);
+  }
+  .header .status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 8px var(--green);
+    animation: pulse-dot 2s ease-in-out infinite;
+    margin-left: auto;
+  }
+  .header .status-dot.running { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+  .header .status-dot.expired { background: var(--red); box-shadow: 0 0 8px var(--red); animation: blink-dot 0.5s step-end infinite; }
+  @keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:0.4} }
+  @keyframes blink-dot { 0%,100%{opacity:1} 50%{opacity:0} }
+
+  /* Fullscreen button */
+  .btn-fullscreen {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 4px 7px;
+    line-height: 1;
+    transition: color 0.15s, border-color 0.15s, box-shadow 0.15s;
+    flex-shrink: 0;
+  }
+  .btn-fullscreen:hover {
+    color: var(--amber);
+    border-color: var(--amber-dim);
+    box-shadow: 0 0 8px var(--amber-glow);
+  }
+  .btn-fullscreen svg { display: block; }
+
+  /* Digital display */
+  .digital {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px 32px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .digital::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at 50% 0%, var(--amber-glow-soft) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .digital-time {
+    font-size: clamp(64px, 16vw, 96px);
+    letter-spacing: 6px;
+    line-height: 1;
+    color: var(--amber);
+    text-shadow: 0 0 30px var(--amber-glow), 0 0 60px rgba(232,160,32,0.08);
+    font-variant-numeric: tabular-nums;
+  }
+  .digital-time.expired {
+    color: var(--red);
+    text-shadow: 0 0 30px var(--red-glow), 0 0 60px rgba(214,48,48,0.12);
+    animation: alarm-pulse 2.4s ease-in-out infinite;
+  }
+  @keyframes alarm-pulse {
+    0%, 100% { opacity: 1;    text-shadow: 0 0 40px rgba(214,48,48,0.9), 0 0 80px rgba(214,48,48,0.3); }
+    50%       { opacity: 0.7; text-shadow: 0 0 20px rgba(214,48,48,0.4), 0 0 40px rgba(214,48,48,0.1); }
+  }
+  .digital-label {
+    font-size: 10px;
+    letter-spacing: 5px;
+    color: var(--text-dim);
+    margin-top: 8px;
+    text-transform: uppercase;
+  }
+  /* Ghost digits behind */
+  .digital-ghost {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: clamp(64px, 16vw, 96px);
+    letter-spacing: 6px;
+    color: rgba(232,160,32,0.04);
+    pointer-events: none;
+    z-index: 0;
+  }
+  .digital > * { position: relative; z-index: 1; }
+
+  /* Analog clock */
+  .analog-wrap {
+    display: flex;
+    justify-content: center;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 28px;
+  }
+  .clock-face {
+    position: relative;
+    width: 220px;
+    height: 220px;
+  }
+  .clock-face svg {
+    width: 100%; height: 100%;
+    overflow: visible;
+    filter: drop-shadow(0 0 12px var(--amber-glow));
+  }
+
+  /* Presets row */
+  .presets {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .btn {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-mid);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 13px;
+    letter-spacing: 2px;
+    padding: 12px;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s, box-shadow 0.15s, background 0.15s;
+    text-transform: uppercase;
+  }
+  .btn:hover {
+    color: var(--amber);
+    border-color: var(--amber-dim);
+    box-shadow: 0 0 10px var(--amber-glow);
+  }
+  .btn:active { background: rgba(232,160,32,0.08); }
+  .btn.active {
+    color: var(--amber);
+    border-color: var(--amber);
+    box-shadow: 0 0 12px var(--amber-glow);
+  }
+
+  /* Custom input */
+  .custom-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+  .custom-row label {
+    font-size: 10px;
+    letter-spacing: 3px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .time-inputs {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex: 1;
+  }
+  .time-inputs input {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--amber);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 20px;
+    text-align: center;
+    width: 56px;
+    padding: 8px 4px;
+    outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    -moz-appearance: textfield;
+  }
+  .time-inputs input::-webkit-outer-spin-button,
+  .time-inputs input::-webkit-inner-spin-button { -webkit-appearance: none; }
+  .time-inputs input:focus {
+    border-color: var(--amber-dim);
+    box-shadow: 0 0 8px var(--amber-glow);
+  }
+  .time-inputs .sep {
+    color: var(--amber-dim);
+    font-size: 22px;
+    line-height: 1;
+    padding-bottom: 2px;
+  }
+  .btn-set {
+    flex-shrink: 0;
+    padding: 10px 16px;
+  }
+
+  /* Controls */
+  .controls {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .btn-primary {
+    background: rgba(232,160,32,0.1);
+    border-color: var(--amber-dim);
+    color: var(--amber);
+    font-size: 14px;
+    padding: 16px;
+  }
+  .btn-primary:hover {
+    background: rgba(232,160,32,0.18);
+    box-shadow: 0 0 16px var(--amber-glow);
+    border-color: var(--amber);
+  }
+  .btn-reset {
+    color: var(--text-mid);
+  }
+  .btn-reset:hover { color: var(--red); border-color: var(--red); box-shadow: 0 0 10px var(--red-glow); }
+
+  /* Alarm state ? panels and clock */
+  body.alarm .digital {
+    border-color: rgba(214,48,48,0.5);
+    animation: panel-pulse 2.4s ease-in-out infinite;
+  }
+  body.alarm .analog-wrap {
+    border-color: rgba(214,48,48,0.4);
+    animation: panel-pulse 2.4s ease-in-out infinite;
+  }
+  body.alarm .clock-face svg {
+    filter: drop-shadow(0 0 16px rgba(214,48,48,0.5));
+    animation: clock-pulse 2.4s ease-in-out infinite;
+  }
+  @keyframes panel-pulse {
+    0%, 100% { box-shadow: 0 0 18px rgba(214,48,48,0.2) inset; }
+    50%       { box-shadow: 0 0 4px rgba(214,48,48,0.05) inset; }
+  }
+  @keyframes clock-pulse {
+    0%, 100% { filter: drop-shadow(0 0 18px rgba(214,48,48,0.55)); }
+    50%       { filter: drop-shadow(0 0 6px rgba(214,48,48,0.2)); }
+  }
+
+  /* Progress bar */
+  .progress-wrap {
+    height: 2px;
+    background: var(--border);
+    border-radius: 1px;
+    overflow: hidden;
+  }
+  .progress-bar {
+    height: 100%;
+    background: var(--amber);
+    box-shadow: 0 0 6px var(--amber);
+    transition: width 0.5s linear, background 0.3s;
+    width: 100%;
+  }
+  .progress-bar.expired { background: var(--red); box-shadow: 0 0 6px var(--red); }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div class="header">
+    <h1>BREAK TIME</h1>
+    <button class="btn-fullscreen" id="btnFullscreen" onclick="toggleFullscreen()" title="Toggle fullscreen">
+      <!-- expand icon (shown when not fullscreen) -->
+      <svg id="iconExpand" width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M1 5V1H5M9 1H13V5M13 9V13H9M5 13H1V9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <!-- compress icon (shown when fullscreen) -->
+      <svg id="iconCompress" width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:none">
+        <path d="M5 1V5H1M9 5H13M9 13V9H13M1 9H5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </button>
+    <span id="statusDot" class="status-dot"></span>
+  </div>
+
+  <div class="progress-wrap">
+    <div class="progress-bar" id="progressBar"></div>
+  </div>
+
+  <div class="digital">
+<!--    <div class="digital-ghost">00:00</div>  -->
+    <div class="digital-time" id="digitalTime">00:00</div>
+<!--    <div class="digital-label">MIN &nbsp; SEC</div>  -->
+  </div>
+
+  <div class="analog-wrap">
+    <div class="clock-face">
+      <svg id="clockSvg" viewBox="0 0 220 220" xmlns="http://www.w3.org/2000/svg">
+        <!-- Outer ring -->
+        <circle cx="110" cy="110" r="105" fill="none" stroke="#2a2a35" stroke-width="1.5"/>
+        <!-- Subtle fill -->
+        <circle cx="110" cy="110" r="104" fill="#0f0f12"/>
+
+        <!-- Tick marks -->
+        <g id="ticks"></g>
+
+        <!-- Sweep arc (counterclockwise) -->
+        <circle id="sweepArc"
+          cx="110" cy="110" r="88"
+          fill="none"
+          stroke="#e8a020"
+          stroke-width="2"
+          stroke-opacity="0.18"
+          stroke-dasharray="553"
+          stroke-dashoffset="0"
+          transform="rotate(-90 110 110)"
+        />
+
+        <!-- Center glow -->
+        <circle cx="110" cy="110" r="3" fill="#e8a020" opacity="0.6"/>
+
+        <!-- Minute hand -->
+        <line id="minuteHand"
+          x1="110" y1="110"
+          x2="110" y2="28"
+          stroke="#e8a020"
+          stroke-width="2.5"
+          stroke-linecap="round"
+          style="filter: drop-shadow(0 0 4px rgba(232,160,32,0.6))"
+        />
+
+        <!-- Second hand -->
+        <line id="secondHand"
+          x1="110" y1="120"
+          x2="110" y2="24"
+          stroke="#d63030"
+          stroke-width="1.5"
+          stroke-linecap="round"
+          style="filter: drop-shadow(0 0 3px rgba(214,48,48,0.8))"
+        />
+
+        <!-- Center cap -->
+        <circle cx="110" cy="110" r="5" fill="#e8a020" style="filter: drop-shadow(0 0 4px rgba(232,160,32,0.8))"/>
+        <circle cx="110" cy="110" r="2.5" fill="#0d0d0f"/>
+      </svg>
+    </div>
+  </div>
+
+  <div class="presets">
+    <button class="btn" id="preset15" onclick="applyPreset(15)">15 MIN</button>
+    <button class="btn" id="preset30" onclick="applyPreset(30)">30 MIN</button>
+  </div>
+
+  <div class="custom-row">
+    <label>Custom</label>
+    <div class="time-inputs">
+      <input type="number" id="inputMin" min="0" max="99" placeholder="MM" value="5">
+      <span class="sep">:</span>
+      <input type="number" id="inputSec" min="0" max="59" placeholder="SS" value="00">
+    </div>
+    <button class="btn btn-set" onclick="applyCustom()">SET</button>
+  </div>
+
+  <div class="controls">
+    <button class="btn btn-primary" id="btnStartPause" onclick="toggleStartPause()">START</button>
+    <button class="btn btn-reset" onclick="resetTimer()">RESET</button>
+  </div>
+
+</div>
+
+<script>
+// --- State -------------------------------------------------------------------
+let totalSeconds = 0;
+let remainingSeconds = 0;
+let initialSeconds = 0;
+let running = false;
+let interval = null;
+let expired = false;
+
+// --- Tick marks --------------------------------------------------------------
+(function buildTicks() {
+  const g = document.getElementById('ticks');
+  for (let i = 0; i < 60; i++) {
+    const angle = (i / 60) * 2 * Math.PI - Math.PI / 2;
+    const isMajor = i % 5 === 0;
+    const inner = isMajor ? 92 : 97;
+    const outer = 104;
+    const x1 = 110 + inner * Math.cos(angle);
+    const y1 = 110 + inner * Math.sin(angle);
+    const x2 = 110 + outer * Math.cos(angle);
+    const y2 = 110 + outer * Math.sin(angle);
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', x1); line.setAttribute('y1', y1);
+    line.setAttribute('x2', x2); line.setAttribute('y2', y2);
+    line.setAttribute('stroke', isMajor ? '#4a4a60' : '#2a2a38');
+    line.setAttribute('stroke-width', isMajor ? '2' : '1');
+    line.setAttribute('stroke-linecap', 'round');
+    g.appendChild(line);
+  }
+})();
+
+// --- Rotate hand (counterclockwise) -----------------------------------------
+// A full 60-minute timer: minute hand sweeps 360? counterclockwise over 60 min
+// Seconds hand: 360? counterclockwise per 60 seconds
+function setHandAngle(el, fractionOfFull) {
+  // fractionOfFull: 0 ? 12 o'clock, 0.25 ? 3 o'clock, 0.5 ? 6, 0.75 ? 9
+  // Positive rotation = clockwise placement; as fraction decreases each tick, hand sweeps CCW
+  const deg = fractionOfFull * 360;
+  el.setAttribute('transform', `rotate(${deg} 110 110)`);
+}
+
+function updateHands(rem, total) {
+  const minuteEl = document.getElementById('minuteHand');
+  const secondEl = document.getElementById('secondHand');
+
+  // Minute hand: position is based on remaining seconds mapped to the clock face
+  // 3600s = full revolution. So 15min (900s) starts at 3 o'clock, 30min at 6, etc.
+  // Hand points to the remaining-minutes position and sweeps CCW toward 12.
+  const minuteFraction = rem / 3600;
+  setHandAngle(minuteEl, minuteFraction); // fraction of clock face = hand position CCW from 12
+
+  // Seconds hand: points to remaining seconds on clock face, sweeps CCW to 12
+  const secsInMinute = rem % 60;
+  const secFraction = secsInMinute / 60;
+  setHandAngle(secondEl, secFraction);
+
+  // Sweep arc: circumference = 2p*88 ? 552.9
+  const circ = 2 * Math.PI * 88;
+  const arc = document.getElementById('sweepArc');
+  const fraction = total > 0 ? rem / total : 0;
+  arc.setAttribute('stroke-dasharray', circ.toFixed(1));
+  arc.setAttribute('stroke-dashoffset', (circ * (1 - fraction)).toFixed(1));
+}
+
+// --- Display -----------------------------------------------------------------
+function formatTime(s) {
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+}
+
+function render() {
+  const dt = document.getElementById('digitalTime');
+  const dot = document.getElementById('statusDot');
+  const bar = document.getElementById('progressBar');
+  const btn = document.getElementById('btnStartPause');
+
+  dt.textContent = formatTime(remainingSeconds);
+
+  // Expired state
+  if (expired) {
+    document.body.classList.add('alarm');
+    dt.className = 'digital-time expired';
+    dot.className = 'status-dot expired';
+    bar.className = 'progress-bar expired';
+    bar.style.width = '100%';
+    btn.textContent = 'START';
+    // SVG elements go red
+    document.getElementById('minuteHand').setAttribute('stroke', '#d63030');
+    document.getElementById('minuteHand').style.filter = 'drop-shadow(0 0 6px rgba(214,48,48,0.8))';
+    document.getElementById('sweepArc').setAttribute('stroke', '#d63030');
+    document.getElementById('sweepArc').setAttribute('stroke-opacity', '0.35');
+  } else {
+    document.body.classList.remove('alarm');
+    dt.className = 'digital-time';
+    dot.className = running ? 'status-dot running' : 'status-dot';
+    bar.className = 'progress-bar';
+    const pct = initialSeconds > 0 ? (remainingSeconds / initialSeconds) * 100 : 100;
+    bar.style.width = pct + '%';
+    btn.textContent = running ? 'PAUSE' : 'START';
+    // SVG elements back to amber
+    document.getElementById('minuteHand').setAttribute('stroke', '#e8a020');
+    document.getElementById('minuteHand').style.filter = 'drop-shadow(0 0 4px rgba(232,160,32,0.6))';
+    document.getElementById('sweepArc').setAttribute('stroke', '#e8a020');
+    document.getElementById('sweepArc').setAttribute('stroke-opacity', '0.18');
+  }
+
+  updateHands(remainingSeconds, initialSeconds);
+}
+
+// --- Timer logic -------------------------------------------------------------
+function tick() {
+  if (remainingSeconds <= 0) {
+    remainingSeconds = 0;
+    running = false;
+    expired = true;
+    clearInterval(interval);
+    interval = null;
+    render();
+    return;
+  }
+  remainingSeconds--;
+  render();
+}
+
+function toggleStartPause() {
+  if (expired) {
+    // Re-start from initial
+    remainingSeconds = initialSeconds;
+    expired = false;
+  }
+  if (initialSeconds === 0 && remainingSeconds === 0) return;
+
+  if (running) {
+    running = false;
+    clearInterval(interval);
+    interval = null;
+  } else {
+    running = true;
+    interval = setInterval(tick, 1000);
+  }
+  render();
+}
+
+function resetTimer() {
+  running = false;
+  expired = false;
+  clearInterval(interval);
+  interval = null;
+  remainingSeconds = initialSeconds;
+  render();
+}
+
+function setTimer(seconds) {
+  running = false;
+  expired = false;
+  clearInterval(interval);
+  interval = null;
+  initialSeconds = seconds;
+  remainingSeconds = seconds;
+  // Clear active preset highlights
+  document.getElementById('preset15').classList.remove('active');
+  document.getElementById('preset30').classList.remove('active');
+  render();
+}
+
+function applyPreset(minutes) {
+  setTimer(minutes * 60);
+  document.getElementById('inputMin').value = minutes;
+  document.getElementById('inputSec').value = '00';
+  if (minutes === 15) {
+    document.getElementById('preset15').classList.add('active');
+    document.getElementById('preset30').classList.remove('active');
+  } else {
+    document.getElementById('preset30').classList.add('active');
+    document.getElementById('preset15').classList.remove('active');
+  }
+}
+
+function applyCustom() {
+  let m = parseInt(document.getElementById('inputMin').value) || 0;
+  let s = parseInt(document.getElementById('inputSec').value) || 0;
+  m = Math.max(0, Math.min(99, m));
+  s = Math.max(0, Math.min(59, s));
+  document.getElementById('preset15').classList.remove('active');
+  document.getElementById('preset30').classList.remove('active');
+  setTimer(m * 60 + s);
+}
+
+// Clamp input values on change
+document.getElementById('inputMin').addEventListener('change', function() {
+  this.value = Math.max(0, Math.min(99, parseInt(this.value)||0));
+});
+document.getElementById('inputSec').addEventListener('change', function() {
+  this.value = Math.max(0, Math.min(59, parseInt(this.value)||0));
+});
+
+// --- Fullscreen --------------------------------------------------------------
+function toggleFullscreen() {
+  const expand   = document.getElementById('iconExpand');
+  const compress = document.getElementById('iconCompress');
+  if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+    const el = document.documentElement;
+    if (el.requestFullscreen)       el.requestFullscreen();
+    else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen(); // Safari/iOS
+  } else {
+    if (document.exitFullscreen)       document.exitFullscreen();
+    else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+  }
+}
+
+function updateFullscreenIcon() {
+  const isFS = !!(document.fullscreenElement || document.webkitFullscreenElement);
+  document.getElementById('iconExpand').style.display   = isFS ? 'none'  : 'block';
+  document.getElementById('iconCompress').style.display = isFS ? 'block' : 'none';
+}
+
+document.addEventListener('fullscreenchange',       updateFullscreenIcon);
+document.addEventListener('webkitfullscreenchange', updateFullscreenIcon);
+
+// --- Init ---------------------------------------------------------------------
+setTimer(0);
+render();
+</script>
+</body>
+</html>
