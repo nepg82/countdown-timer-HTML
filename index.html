@@ -691,6 +691,14 @@ document.addEventListener('webkitfullscreenchange', updateFullscreenIcon);
 // --- Init ---------------------------------------------------------------------
 setTimer(0);
 render();
+
+// Register the service worker
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./service-worker.js");
+  });
+}
+  
 </script>
 </body>
 </html>
